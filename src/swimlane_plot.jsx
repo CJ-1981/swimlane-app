@@ -1029,6 +1029,7 @@ export default function SwimLane() {
           {!tooltip.isDiamond && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>END <span style={{ color: s.text }}>{tooltip.next ? fmtTs(tooltip.next.ts, true) : "(last event)"}</span></div>}
           {!tooltip.isDiamond && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>DURATION <span style={{ color: s.text }}>{fmtDur(tooltip.dur) || "—"}</span></div>}
           {!tooltip.isDiamond && tooltip.durBefore !== undefined && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>DUR BEFORE <span style={{ color: s.text }}>{fmtDur(tooltip.durBefore) || "—"}</span></div>}
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>ID <span style={{ color: s.text }}>{tooltip.ev._id}</span></div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>VALUE <span style={{ color: tooltip.col, fontWeight: 700 }}>{tooltip.ev.value}</span></div>
         </div>
       )}
