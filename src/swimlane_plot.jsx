@@ -908,8 +908,8 @@ export default function SwimLane() {
                               onMouseLeave={() => setTooltip(null)} />
                             {/* value + duration inside segment */}
                             {segW > 28 && (
-                              <text x={x1 + Math.min(segW / 2, segW - 4)} y={sy + sh / 2 + 4}
-                                textAnchor="middle" fill="rgba(0,0,0,0.72)"
+                              <text x={Math.max(x1, LABEL_W) + 6} y={sy + sh / 2 + 4}
+                                textAnchor="start" fill="rgba(0,0,0,0.72)"
                                 fontFamily="monospace" fontSize={9} fontWeight={700}
                                 style={{ pointerEvents: "none" }}>
                                 {finalLabel}
