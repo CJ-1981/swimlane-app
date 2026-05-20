@@ -405,11 +405,27 @@ export default function SwimLane() {
       starred
     };
 
-    let html = `<!DOCTYPE html>\n<html lang="en">` + document.documentElement.innerHTML + "</html>";
-    html = html.replace(/<script id="injected-state">.*?<\/script>/s, "");
+    // Collect only <script> and <style> tags from <head> — NOT the live rendered DOM.
+    // This produces a clean file where React re-initializes from scratch with injected state.
+    const headScripts = Array.from(document.head.querySelectorAll("script, style, link"))
+      .map(el => el.outerHTML)
+      .join("\n");
 
     const stateScript = `<script id="injected-state">window.INITIAL_SWIMLANE_STATE = ${JSON.stringify(stateToExport)};</script>`;
-    html = html.replace("</head>", stateScript + "</head>");
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Swimlane Timeline – Export</title>
+${stateScript}
+${headScripts}
+</head>
+<body>
+<div id="root"></div>
+</body>
+</html>`;
 
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
