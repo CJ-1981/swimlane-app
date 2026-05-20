@@ -549,8 +549,12 @@ export default function SwimLane() {
           <option value="events">Most events</option>
           <option value="custom">Custom</option>
         </select>
-        <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
-        <Btn onClick={exportHTML}>⤓ EXPORT</Btn>
+        {!window.INITIAL_SWIMLANE_STATE && (
+          <>
+            <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
+            <Btn onClick={exportHTML}>⤓ EXPORT</Btn>
+          </>
+        )}
       </div>
 
       {/* Main */}
