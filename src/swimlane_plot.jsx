@@ -293,6 +293,9 @@ function SwimLaneInner(props) {
   const wheelData = useRef({});
   const fileInputRef = useRef(null);
   const zoomDebounceRef = useRef(null); // #7 debounce ref for button zoom
+  useEffect(() => {
+    return () => { if (zoomDebounceRef.current) clearTimeout(zoomDebounceRef.current); };
+  }, []);
 
   function handleFileUpload(e) {
     const file = e.target.files[0];
@@ -390,7 +393,7 @@ function SwimLaneInner(props) {
     return () => el.removeEventListener("wheel", handleNativeWheel);
   }, [rows.length]);
 
-  function getGroups() {
+  const groups = useMemo(() => {
     const g = [...new Set(rows.map(r => r.group))];
     if (sortMode === "custom") {
       const ordered = customGroupOrder.filter(grp => g.includes(grp));
@@ -402,7 +405,9 @@ function SwimLaneInner(props) {
     if (sortMode === "events") return g.sort((a, b) =>
       rows.filter(r => r.group === b).length - rows.filter(r => r.group === a).length);
     return g;
-  }
+  }, [rows, sortMode, customGroupOrder]);
+
+  const activeGroups = useMemo(() => groups.filter(g => !hiddenGroups[g]), [groups, hiddenGroups]);
   function getValues() { return [...new Set(activeRows.map(r => r.value))]; }
 
   function addRow() {
@@ -508,8 +513,6 @@ ${headScripts}
   }
 
   // ── Layout math
-  const groups = getGroups();
-  const activeGroups = groups.filter(g => !hiddenGroups[g]);
   const values = getValues();
   const containerW = scrollRef.current?.clientWidth || 700;
   const W = Math.max(containerW, 400);
@@ -541,7 +544,7 @@ ${headScripts}
 
     return activeGroups.map((group) => {
       const mode = groupModes[group] || "span";
-      const laneData = (grouped.get(group) || []).sort((a, b) => a.ts - b.ts);
+      const laneData = grouped.get(group) || [];
       const items = laneData.map((ev, i) => {
         const next = laneData[i + 1] || null;
         const col = colorMap[ev.value] || "#888";
@@ -552,8 +555,7 @@ ${headScripts}
       });
       return { group, mode, items };
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRows, colorMap, groupModes, activeGroups.join("|")]);
+  }, [activeRows, colorMap, groupModes, activeGroups]);
 
   // ── Pixel positions injected at render time (zoom/pan-dependent)
   const laneItems = laneEventData.map(({ group, mode, items }, gi) => {
@@ -782,7 +784,7 @@ ${headScripts}
                       onDrop={(e) => {
                         e.preventDefault();
                         if (draggedGroup && draggedGroup !== group) {
-                          let currentGroups = getGroups();
+                          let currentGroups = [...groups];
                           const draggedIdx = currentGroups.indexOf(draggedGroup);
                           const targetIdx = currentGroups.indexOf(group);
                           if (draggedIdx !== -1 && targetIdx !== -1) {
