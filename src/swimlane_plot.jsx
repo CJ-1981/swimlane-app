@@ -670,7 +670,7 @@ ${headScripts}
 
       {/* Toolbar */}
       <div style={{ display: "flex", gap: 7, alignItems: "center", padding: "7px 18px", background: s.surface2, borderBottom: `1px solid ${s.border}`, flexWrap: "wrap", flexShrink: 0 }}>
-        <Btn onClick={() => setPanelOpen(p => !p)} accent>◀ DATA</Btn>
+        <Btn onClick={() => setPanelOpen(p => !p)} accent>{panelOpen ? "◀" : "▶"} DATA</Btn>
         <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
         <Btn onClick={() => setIsDarkTheme(d => !d)}>{isDarkTheme ? "☀ LIGHT" : "🌙 DARK"}</Btn>
         <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
