@@ -35,13 +35,17 @@ const SAMPLE_CSV = `timestamp,group,value
 const darkTheme = {
   bg: "#0d0f14", surface: "#161a24", surface2: "#1e2535",
   border: "#2a3045", accent: "#4fc3f7", accent2: "#f06292",
-  text: "#cdd6f4", muted: "#6272a4"
+  text: "#cdd6f4", muted: "#6272a4",
+  laneBg1: "#161a24", laneBg2: "#12151e",
+  labelBg1: "#1a1e2a", labelBg2: "#151820"
 };
 
 const lightTheme = {
   bg: "#f8f9fa", surface: "#ffffff", surface2: "#f1f3f5",
   border: "#dee2e6", accent: "#0288d1", accent2: "#c2185b",
-  text: "#212529", muted: "#6c757d"
+  text: "#212529", muted: "#6c757d",
+  laneBg1: "#ffffff", laneBg2: "#f8f9fa",
+  labelBg1: "#f1f3f5", labelBg2: "#e9ecef"
 };
 
 function parseCSV(text, sep = ",") {
@@ -1009,7 +1013,7 @@ ${headScripts}
                 {/* lane backgrounds (full width) */}
                 {laneItems.map(({ group, gi, y }) => (
                   <g key={"bg-" + group}>
-                    <rect x={0} y={y} width={W} height={LANE_H} fill={gi % 2 === 0 ? "#161a24" : "#12151e"} />
+                    <rect x={0} y={y} width={W} height={LANE_H} fill={gi % 2 === 0 ? s.laneBg1 : s.laneBg2} />
                     <line x1={0} y1={y + LANE_H} x2={W} y2={y + LANE_H} stroke={s.surface2} strokeWidth={0.5} />
                   </g>
                 ))}
@@ -1137,7 +1141,7 @@ ${headScripts}
                 {/* labels container (drawn over data to mask overflow, outside clip path) */}
                 {laneItems.map(({ group, gi, y, mode }) => (
                   <g key={"label-" + group}>
-                    <rect x={0} y={y} width={LABEL_W} height={LANE_H} fill={gi % 2 === 0 ? "#1a1e2a" : "#151820"} />
+                    <rect x={0} y={y} width={LABEL_W} height={LANE_H} fill={gi % 2 === 0 ? s.labelBg1 : s.labelBg2} />
                     {mode === "diamond" && (
                       <polygon
                         points={`${LABEL_W - 14},${y + LANE_H / 2} ${LABEL_W - 10},${y + LANE_H / 2 - 4} ${LABEL_W - 6},${y + LANE_H / 2} ${LABEL_W - 10},${y + LANE_H / 2 + 4}`}
