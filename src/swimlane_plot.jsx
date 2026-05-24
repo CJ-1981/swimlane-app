@@ -32,10 +32,16 @@ const SAMPLE_CSV = `timestamp,group,value
 2024-01-15 10:30,Load Balancer,critical
 2024-01-15 11:00,Load Balancer,healthy`;
 
-const s = {
+const darkTheme = {
   bg: "#0d0f14", surface: "#161a24", surface2: "#1e2535",
   border: "#2a3045", accent: "#4fc3f7", accent2: "#f06292",
   text: "#cdd6f4", muted: "#6272a4"
+};
+
+const lightTheme = {
+  bg: "#f8f9fa", surface: "#ffffff", surface2: "#f1f3f5",
+  border: "#dee2e6", accent: "#0288d1", accent2: "#c2185b",
+  text: "#212529", muted: "#6c757d"
 };
 
 function parseCSV(text, sep = ",") {
@@ -94,7 +100,7 @@ const LABEL_W = 130, AXIS_H = 40, LANE_H = 52, LANE_GAP = 6, PAD_TOP = 8, PAD_R 
 const DIAMOND_SIZE = 10; // half-size of diamond
 
 // ── Diamond marker at a point (no span)
-function DiamondMarker({ cx, cy, size, col, onMouseMove, onMouseLeave }) {
+function DiamondMarker({ cx, cy, size, col, s, onMouseMove, onMouseLeave }) {
   const pts = `${cx},${cy - size} ${cx + size},${cy} ${cx},${cy + size} ${cx - size},${cy}`;
   return (
     <polygon points={pts} fill={col} stroke={s.bg} strokeWidth={1.5}
@@ -160,7 +166,7 @@ function checkDurFilter(durMs, filterStr) {
   return false;
 }
 
-function MultiSelect({ options, selected, onChange, placeholder }) {
+function MultiSelect({ options, selected, onChange, placeholder, s }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef(null);
@@ -248,6 +254,9 @@ export default function SwimLane(props) {
 }
 
 function SwimLaneInner(props) {
+  const [isDarkTheme, setIsDarkTheme] = useState(defaultState.isDarkTheme ?? true);
+  const [panelWidth, setPanelWidth] = useState(defaultState.panelWidth || 300);
+  const s = isDarkTheme ? darkTheme : lightTheme;
   const [csvText, setCsvText] = useState(defaultState.csvText || SAMPLE_CSV);
   const [csvSeparator, setCsvSeparator] = useState(defaultState.csvSeparator || ",");
   const [rows, setRows] = useState([]);
@@ -354,10 +363,10 @@ function SwimLaneInner(props) {
   useEffect(() => {
     if (window.INITIAL_SWIMLANE_STATE) return; // don't overwrite exported state
     const timer = setTimeout(() => {
-      persistState({ csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred });
+      persistState({ csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred, isDarkTheme, panelWidth });
     }, 500);
     return () => clearTimeout(timer);
-  }, [csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred]);
+  }, [csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred, isDarkTheme, panelWidth]);
 
   useEffect(() => {
     handleRender(!!window.INITIAL_SWIMLANE_STATE);
@@ -462,7 +471,7 @@ function SwimLaneInner(props) {
     setColorMap(m => ({ ...m, [pickerFor]: e.target.value }));
   }
 
-  function exportHTML() {
+  function exportHTML(includeCsv = true) {
     const isDev = !!document.querySelector('script[src*="@vite/client"]');
     if (isDev) {
       alert("Please run 'npm run build' and open dist/index.html to export an interactive HTML with your data.");
@@ -470,7 +479,7 @@ function SwimLaneInner(props) {
     }
 
     const stateToExport = {
-      csvText,
+      csvText: includeCsv ? csvText : "",
       csvSeparator,
       colorMap,
       hiddenValues,
@@ -478,7 +487,9 @@ function SwimLaneInner(props) {
       groupModes,
       sortMode,
       customGroupOrder,
-      starred
+      starred,
+      isDarkTheme,
+      panelWidth
     };
 
     // Collect only <script> and <style> tags from <head> — NOT the live rendered DOM.
@@ -630,6 +641,20 @@ ${headScripts}
         .highlight-pulse {
           animation: blink-highlight 0.8s ease-out 3;
         }
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+          background: ${s.bg};
+        }
+        ::-webkit-scrollbar-thumb {
+          background: ${s.surface2};
+          border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: ${s.muted};
+        }
       `}</style>
       {/* Header */}
       <div style={{ padding: "11px 20px", background: s.surface, borderBottom: `1px solid ${s.border}`, display: "flex", alignItems: "baseline", gap: 12, flexShrink: 0 }}>
@@ -640,6 +665,8 @@ ${headScripts}
       {/* Toolbar */}
       <div style={{ display: "flex", gap: 7, alignItems: "center", padding: "7px 18px", background: s.surface2, borderBottom: `1px solid ${s.border}`, flexWrap: "wrap", flexShrink: 0 }}>
         <Btn onClick={() => setPanelOpen(p => !p)} accent>◀ DATA</Btn>
+        <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
+        <Btn onClick={() => setIsDarkTheme(d => !d)}>{isDarkTheme ? "☀ LIGHT" : "🌙 DARK"}</Btn>
         <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
         <Btn onClick={() => handleButtonZoom(1 / 1.6)}>＋</Btn>
         <Btn onClick={() => handleButtonZoom(1.6)}>－</Btn>
@@ -660,7 +687,8 @@ ${headScripts}
         {!window.INITIAL_SWIMLANE_STATE && (
           <>
             <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
-            <Btn onClick={exportHTML}>⤓ EXPORT</Btn>
+            <Btn onClick={() => exportHTML(true)}>⤓ EXPORT</Btn>
+            <Btn onClick={() => exportHTML(false)}>⤓ EXPORT (NO CSV)</Btn>
           </>
         )}
       </div>
@@ -670,7 +698,8 @@ ${headScripts}
 
         {/* Side Panel */}
         {panelOpen && (
-          <div style={{ width: 300, flexShrink: 0, background: s.surface, borderRight: `1px solid ${s.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <>
+          <div style={{ width: panelWidth, flexShrink: 0, background: s.surface, borderRight: `1px solid ${s.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             {/* Tabs */}
             <div style={{ display: "flex", borderBottom: `1px solid ${s.border}`, flexShrink: 0 }}>
               {["csv", "manual", "groups", "table"].map(tab => (
@@ -828,8 +857,8 @@ ${headScripts}
                 <div style={{ display: "flex", gap: 5, padding: 8, background: s.surface2, borderBottom: `1px solid ${s.border}` }}>
                   <input type="text" placeholder="ID" value={tableFilterId} onChange={e => setTableFilterId(e.target.value)} style={{ flex: "0.5", background: s.bg, border: `1px solid ${s.border}`, color: s.text, fontFamily: "monospace", fontSize: ".6rem", padding: "4px 2px", borderRadius: 2, outline: "none", minWidth: 0 }} />
                   <input type="text" placeholder="TIME" value={tableFilterTs} onChange={e => setTableFilterTs(e.target.value)} style={{ flex: 1, background: s.bg, border: `1px solid ${s.border}`, color: s.text, fontFamily: "monospace", fontSize: ".6rem", padding: "4px 2px", borderRadius: 2, outline: "none", minWidth: 0 }} />
-                  <MultiSelect options={allGroups} selected={tableFilterGroup} onChange={setTableFilterGroup} placeholder="GRP" />
-                  <MultiSelect options={allValues} selected={tableFilterValue} onChange={setTableFilterValue} placeholder="VAL" />
+                  <MultiSelect options={allGroups} selected={tableFilterGroup} onChange={setTableFilterGroup} placeholder="GRP" s={s} />
+                  <MultiSelect options={allValues} selected={tableFilterValue} onChange={setTableFilterValue} placeholder="VAL" s={s} />
                   <input type="text" placeholder="DUR" title={"Filter by duration.\nExamples:\n• >5 (greater than 5s)\n• <1h (less than 1 hour)\n• >=1.5d (greater or equal 1.5 days)\n• 10-20m (between 10 and 20 mins)\n• 30s (exactly 30s)"} value={tableFilterDur} onChange={e => setTableFilterDur(e.target.value)} style={{ flex: 1, background: s.bg, border: `1px solid ${s.border}`, color: s.text, fontFamily: "monospace", fontSize: ".6rem", padding: "4px 2px", borderRadius: 2, outline: "none", minWidth: 0 }} />
                   <input type="text" placeholder="DUR_BEF" title={"Filter by duration before.\nExamples:\n• >5\n• <1h\n• 10-20m\n• 30s"} value={tableFilterDurBefore} onChange={e => setTableFilterDurBefore(e.target.value)} style={{ flex: 1, background: s.bg, border: `1px solid ${s.border}`, color: s.text, fontFamily: "monospace", fontSize: ".6rem", padding: "4px 2px", borderRadius: 2, outline: "none", minWidth: 0 }} />
                 </div>
@@ -885,6 +914,34 @@ ${headScripts}
               </div>
             )}
           </div>
+          <div
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const startX = e.clientX;
+              const startWidth = panelWidth;
+              document.body.style.cursor = "col-resize";
+              const handleMouseMove = (moveEvent) => {
+                const newWidth = Math.max(200, Math.min(startWidth + moveEvent.clientX - startX, 800));
+                setPanelWidth(newWidth);
+              };
+              const handleMouseUp = () => {
+                document.body.style.cursor = "default";
+                document.removeEventListener("mousemove", handleMouseMove);
+                document.removeEventListener("mouseup", handleMouseUp);
+              };
+              document.addEventListener("mousemove", handleMouseMove);
+              document.addEventListener("mouseup", handleMouseUp);
+            }}
+            style={{
+              width: 6,
+              cursor: "col-resize",
+              background: s.bg,
+              borderRight: `1px solid ${s.border}`,
+              flexShrink: 0,
+              zIndex: 10,
+            }}
+          />
+          </>
         )}
 
         {/* Chart area */}
@@ -985,7 +1042,7 @@ ${headScripts}
                         return (
                           <g key={i}>
                             <DiamondMarker
-                              cx={x1} cy={cy} size={DIAMOND_SIZE} col={col}
+                              cx={x1} cy={cy} size={DIAMOND_SIZE} col={col} s={s}
                               onMouseMove={e => { setTooltip({ ...tooltipData, isDiamond: true }); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
                               onMouseLeave={() => setTooltip(null)}
                             />
