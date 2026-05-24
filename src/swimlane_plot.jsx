@@ -247,7 +247,7 @@ export default function SwimLane(props) {
   );
 }
 
-function SwimLaneInner() {
+function SwimLaneInner(props) {
   const [csvText, setCsvText] = useState(defaultState.csvText || SAMPLE_CSV);
   const [csvSeparator, setCsvSeparator] = useState(defaultState.csvSeparator || ",");
   const [rows, setRows] = useState([]);
@@ -347,10 +347,13 @@ function SwimLaneInner() {
     }, 10);
   }
 
-  // ── Persist state to localStorage whenever relevant state changes ──────────
+  // ── Persist state to localStorage whenever relevant state changes (debounced) ─
   useEffect(() => {
     if (window.INITIAL_SWIMLANE_STATE) return; // don't overwrite exported state
-    persistState({ csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred });
+    const timer = setTimeout(() => {
+      persistState({ csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred });
+    }, 500);
+    return () => clearTimeout(timer);
   }, [csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred]);
 
   useEffect(() => {
@@ -411,6 +414,9 @@ function SwimLaneInner() {
     setColorMap(buildColorMap(newRows, colorMap));
     setRows(newRows);
     setError("");
+    setManualTs("");
+    setManualGroup("");
+    setManualValue("");
     // Return focus to timestamp field for quick sequential entry
     setTimeout(() => manualTsRef.current && manualTsRef.current.focus(), 50);
   }
@@ -527,11 +533,15 @@ ${headScripts}
   // Pixel positions (x1, x2, segW) are computed at render time below so that
   // zoom/pan only recomputes coordinates, not the expensive grouping work.
   const laneEventData = useMemo(() => {
+    const grouped = new Map();
+    activeRows.forEach(r => {
+      if (!grouped.has(r.group)) grouped.set(r.group, []);
+      grouped.get(r.group).push(r);
+    });
+
     return activeGroups.map((group) => {
       const mode = groupModes[group] || "span";
-      const laneData = activeRows
-        .filter(r => r.group === group)
-        .sort((a, b) => a.ts - b.ts);
+      const laneData = (grouped.get(group) || []).sort((a, b) => a.ts - b.ts);
       const items = laneData.map((ev, i) => {
         const next = laneData[i + 1] || null;
         const col = colorMap[ev.value] || "#888";
