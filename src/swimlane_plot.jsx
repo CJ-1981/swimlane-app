@@ -37,7 +37,8 @@ const darkTheme = {
   border: "#2a3045", accent: "#4fc3f7", accent2: "#f06292",
   text: "#cdd6f4", muted: "#6272a4",
   laneBg1: "#161a24", laneBg2: "#12151e",
-  labelBg1: "#1a1e2a", labelBg2: "#151820"
+  labelBg1: "#1a1e2a", labelBg2: "#151820",
+  noticeBg: "rgba(42,48,69,.35)"
 };
 
 const lightTheme = {
@@ -45,7 +46,8 @@ const lightTheme = {
   border: "#dee2e6", accent: "#0288d1", accent2: "#c2185b",
   text: "#212529", muted: "#6c757d",
   laneBg1: "#ffffff", laneBg2: "#f8f9fa",
-  labelBg1: "#f1f3f5", labelBg2: "#e9ecef"
+  labelBg1: "#f1f3f5", labelBg2: "#e9ecef",
+  noticeBg: "rgba(0,0,0,0.05)"
 };
 
 function parseCSV(text, sep = ",") {
@@ -717,7 +719,7 @@ ${headScripts}
             {activeTab === "csv" && (
               <div style={{ padding: 12, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <div style={{ fontSize: ".6rem", color: s.muted, background: "rgba(42,48,69,.35)", borderLeft: `2px solid ${s.accent}`, padding: "6px 9px", lineHeight: 1.6, flex: 1 }}>
+                  <div style={{ fontSize: ".6rem", color: s.muted, background: s.noticeBg, borderLeft: `2px solid ${s.accent}`, padding: "6px 9px", lineHeight: 1.6, flex: 1 }}>
                     Header: <strong>timestamp, group, value</strong>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 10 }}>
@@ -792,7 +794,7 @@ ${headScripts}
             {/* Groups Tab — view toggles */}
             {activeTab === "groups" && (
               <div style={{ padding: 12, overflowY: "auto", flex: 1 }}>
-                <div style={{ fontSize: ".6rem", color: s.muted, background: "rgba(42,48,69,.35)", borderLeft: `2px solid ${s.accent}`, padding: "6px 9px", marginBottom: 12, lineHeight: 1.6 }}>
+                <div style={{ fontSize: ".6rem", color: s.muted, background: s.noticeBg, borderLeft: `2px solid ${s.accent}`, padding: "6px 9px", marginBottom: 12, lineHeight: 1.6 }}>
                   Click group name to <strong>SHOW/HIDE</strong>.<br />Click right side to cycle <strong>SPAN / DIAMOND / LINE</strong> mode.<br />Diamond = instant event, Line = vertical marker.
                 </div>
                 {groups.length === 0 && <div style={{ fontSize: ".62rem", color: s.muted }}>No groups loaded yet.</div>}
