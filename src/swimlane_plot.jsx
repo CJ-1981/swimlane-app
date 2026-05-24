@@ -259,13 +259,24 @@ export default function SwimLane(props) {
   );
 }
 
+function ToolbarButton({ children, onClick, accent, s }) {
+  return (
+    <button onClick={onClick} style={{
+      fontFamily: "monospace", fontSize: ".67rem", padding: "4px 11px", borderRadius: 3,
+      border: `1px solid ${accent ? s.accent : s.border}`,
+      background: s.surface, color: accent ? s.accent : s.text,
+      cursor: "pointer", letterSpacing: ".05em"
+    }}>{children}</button>
+  );
+}
+
 function SwimLaneInner(props) {
   const [isDarkTheme, setIsDarkTheme] = useState(defaultState.isDarkTheme ?? true);
   const [panelWidth, setPanelWidth] = useState(defaultState.panelWidth || 300);
   const s = isDarkTheme ? darkTheme : lightTheme;
-  const [csvText, setCsvText] = useState(defaultState.csvText || SAMPLE_CSV);
+  const [csvText, setCsvText] = useState(defaultState.csvIncluded === false ? "" : (defaultState.csvText || SAMPLE_CSV));
   const [csvSeparator, setCsvSeparator] = useState(defaultState.csvSeparator || ",");
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState(defaultState.exportedRows || []);
   const [colorMap, setColorMap] = useState(defaultState.colorMap || {});
   const [hiddenValues, setHiddenValues] = useState(defaultState.hiddenValues || {});
   const [hiddenGroups, setHiddenGroups] = useState(defaultState.hiddenGroups || {});
@@ -349,6 +360,10 @@ function SwimLaneInner(props) {
   }
 
   function handleRender(isInitial = false) {
+    if (isInitial && defaultState.exportedRows) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setTimeout(() => {
       try {
@@ -495,7 +510,9 @@ function SwimLaneInner(props) {
       customGroupOrder,
       starred,
       isDarkTheme,
-      panelWidth
+      panelWidth,
+      exportedRows: includeCsv ? null : rows,
+      csvIncluded: includeCsv
     };
 
     // Collect only <script> and <style> tags from <head> — NOT the live rendered DOM.
@@ -504,7 +521,11 @@ function SwimLaneInner(props) {
       .map(el => el.outerHTML)
       .join("\n");
 
-    const stateScript = `<script id="injected-state">window.INITIAL_SWIMLANE_STATE = ${JSON.stringify(stateToExport)};</script>`;
+    const serializedState = JSON.stringify(stateToExport)
+      .replace(/</g, "\\u003c")
+      .replace(/\u2028/g, "\\u2028")
+      .replace(/\u2029/g, "\\u2029");
+    const stateScript = `<script id="injected-state">window.INITIAL_SWIMLANE_STATE = ${serializedState};</script>`;
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -623,14 +644,7 @@ ${headScripts}
     );
   }, [activeRows, rowDetails, starred, showStarredOnly, tableFilterId, tableFilterTs, tableFilterGroup, tableFilterValue, tableFilterDur, tableFilterDurBefore]);
 
-  const Btn = ({ children, onClick, accent }) => (
-    <button onClick={onClick} style={{
-      fontFamily: "monospace", fontSize: ".67rem", padding: "4px 11px", borderRadius: 3,
-      border: `1px solid ${accent ? s.accent : s.border}`,
-      background: s.surface, color: accent ? s.accent : s.text,
-      cursor: "pointer", letterSpacing: ".05em"
-    }}>{children}</button>
-  );
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: s.bg, color: s.text, fontFamily: "monospace", fontSize: 13, overflow: "hidden" }}>
@@ -670,16 +684,16 @@ ${headScripts}
 
       {/* Toolbar */}
       <div style={{ display: "flex", gap: 7, alignItems: "center", padding: "7px 18px", background: s.surface2, borderBottom: `1px solid ${s.border}`, flexWrap: "wrap", flexShrink: 0 }}>
-        <Btn onClick={() => setPanelOpen(p => !p)} accent>{panelOpen ? "◀" : "▶"} DATA</Btn>
+        <ToolbarButton s={s} onClick={() => setPanelOpen(p => !p)} accent>{panelOpen ? "◀" : "▶"} DATA</ToolbarButton>
         <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
-        <Btn onClick={() => setIsDarkTheme(d => !d)}>{isDarkTheme ? "☀ LIGHT" : "🌙 DARK"}</Btn>
+        <ToolbarButton s={s} onClick={() => setIsDarkTheme(d => !d)}>{isDarkTheme ? "☀ LIGHT" : "🌙 DARK"}</ToolbarButton>
         <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
-        <Btn onClick={() => handleButtonZoom(1 / 1.6)}>＋</Btn>
-        <Btn onClick={() => handleButtonZoom(1.6)}>－</Btn>
-        <Btn onClick={() => setTimeRange(null)}>FIT</Btn>
+        <ToolbarButton s={s} onClick={() => handleButtonZoom(1 / 1.6)}>＋</ToolbarButton>
+        <ToolbarButton s={s} onClick={() => handleButtonZoom(1.6)}>－</ToolbarButton>
+        <ToolbarButton s={s} onClick={() => setTimeRange(null)}>FIT</ToolbarButton>
         <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
-        <Btn onClick={() => setDragMode("zoom")} accent={dragMode === "zoom"}>🔍 ZOOM</Btn>
-        <Btn onClick={() => setDragMode("pan")} accent={dragMode === "pan"}>✋ PAN</Btn>
+        <ToolbarButton s={s} onClick={() => setDragMode("zoom")} accent={dragMode === "zoom"}>🔍 ZOOM</ToolbarButton>
+        <ToolbarButton s={s} onClick={() => setDragMode("pan")} accent={dragMode === "pan"}>✋ PAN</ToolbarButton>
         <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
         <span style={{ fontSize: ".6rem", color: s.muted }}>SORT:</span>
         <select value={sortMode} onChange={e => setSortMode(e.target.value)}
@@ -693,8 +707,8 @@ ${headScripts}
         {!window.INITIAL_SWIMLANE_STATE && (
           <>
             <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
-            <Btn onClick={() => exportHTML(true)}>⤓ EXPORT</Btn>
-            <Btn onClick={() => exportHTML(false)}>⤓ EXPORT (NO CSV)</Btn>
+            <ToolbarButton s={s} onClick={() => exportHTML(true)}>⤓ EXPORT</ToolbarButton>
+            <ToolbarButton s={s} onClick={() => exportHTML(false)}>⤓ EXPORT (NO CSV)</ToolbarButton>
           </>
         )}
       </div>
