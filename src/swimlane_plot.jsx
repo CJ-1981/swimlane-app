@@ -32,10 +32,22 @@ const SAMPLE_CSV = `timestamp,group,value
 2024-01-15 10:30,Load Balancer,critical
 2024-01-15 11:00,Load Balancer,healthy`;
 
-const s = {
+const darkTheme = {
   bg: "#0d0f14", surface: "#161a24", surface2: "#1e2535",
   border: "#2a3045", accent: "#4fc3f7", accent2: "#f06292",
-  text: "#cdd6f4", muted: "#6272a4"
+  text: "#cdd6f4", muted: "#6272a4",
+  laneBg1: "#161a24", laneBg2: "#12151e",
+  labelBg1: "#1a1e2a", labelBg2: "#151820",
+  noticeBg: "rgba(42,48,69,.35)"
+};
+
+const lightTheme = {
+  bg: "#f8f9fa", surface: "#ffffff", surface2: "#f1f3f5",
+  border: "#dee2e6", accent: "#0288d1", accent2: "#c2185b",
+  text: "#212529", muted: "#6c757d",
+  laneBg1: "#ffffff", laneBg2: "#f8f9fa",
+  labelBg1: "#f1f3f5", labelBg2: "#e9ecef",
+  noticeBg: "rgba(0,0,0,0.05)"
 };
 
 function parseCSV(text, sep = ",") {
@@ -94,7 +106,7 @@ const LABEL_W = 130, AXIS_H = 40, LANE_H = 52, LANE_GAP = 6, PAD_TOP = 8, PAD_R 
 const DIAMOND_SIZE = 10; // half-size of diamond
 
 // ── Diamond marker at a point (no span)
-function DiamondMarker({ cx, cy, size, col, onMouseMove, onMouseLeave }) {
+function DiamondMarker({ cx, cy, size, col, s, onMouseMove, onMouseLeave }) {
   const pts = `${cx},${cy - size} ${cx + size},${cy} ${cx},${cy + size} ${cx - size},${cy}`;
   return (
     <polygon points={pts} fill={col} stroke={s.bg} strokeWidth={1.5}
@@ -160,7 +172,7 @@ function checkDurFilter(durMs, filterStr) {
   return false;
 }
 
-function MultiSelect({ options, selected, onChange, placeholder }) {
+function MultiSelect({ options, selected, onChange, placeholder, s }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef(null);
@@ -247,10 +259,26 @@ export default function SwimLane(props) {
   );
 }
 
+function ToolbarButton({ children, onClick, accent, s }) {
+  return (
+    <button onClick={onClick} style={{
+      fontFamily: "monospace", fontSize: ".67rem", padding: "4px 11px", borderRadius: 3,
+      border: `1px solid ${accent ? s.accent : s.border}`,
+      background: s.surface, color: accent ? s.accent : s.text,
+      cursor: "pointer", letterSpacing: ".05em"
+    }}>{children}</button>
+  );
+}
+
 function SwimLaneInner(props) {
-  const [csvText, setCsvText] = useState(defaultState.csvText || SAMPLE_CSV);
+  const [isDarkTheme, setIsDarkTheme] = useState(defaultState.isDarkTheme ?? true);
+  const [panelWidth, setPanelWidth] = useState(defaultState.panelWidth || 300);
+  const [isResizingPanel, setIsResizingPanel] = useState(false);
+  const resizeStartRef = useRef(null);
+  const s = isDarkTheme ? darkTheme : lightTheme;
+  const [csvText, setCsvText] = useState(defaultState.csvIncluded === false ? "" : (defaultState.csvText || SAMPLE_CSV));
   const [csvSeparator, setCsvSeparator] = useState(defaultState.csvSeparator || ",");
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState(defaultState.exportedRows || []);
   const [colorMap, setColorMap] = useState(defaultState.colorMap || {});
   const [hiddenValues, setHiddenValues] = useState(defaultState.hiddenValues || {});
   const [hiddenGroups, setHiddenGroups] = useState(defaultState.hiddenGroups || {});
@@ -334,6 +362,10 @@ function SwimLaneInner(props) {
   }
 
   function handleRender(isInitial = false) {
+    if (isInitial && defaultState.exportedRows) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setTimeout(() => {
       try {
@@ -354,10 +386,30 @@ function SwimLaneInner(props) {
   useEffect(() => {
     if (window.INITIAL_SWIMLANE_STATE) return; // don't overwrite exported state
     const timer = setTimeout(() => {
-      persistState({ csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred });
+      persistState({ csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred, isDarkTheme, panelWidth });
     }, 500);
     return () => clearTimeout(timer);
-  }, [csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred]);
+  }, [csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred, isDarkTheme, panelWidth]);
+
+  useEffect(() => {
+    if (!isResizingPanel) return;
+    const handleMouseMove = (moveEvent) => {
+      const { startX, startWidth } = resizeStartRef.current;
+      const newWidth = Math.max(200, Math.min(startWidth + moveEvent.clientX - startX, 800));
+      setPanelWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      document.body.style.cursor = "default";
+      setIsResizingPanel(false);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.body.style.cursor = "default";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizingPanel]);
 
   useEffect(() => {
     handleRender(!!window.INITIAL_SWIMLANE_STATE);
@@ -462,7 +514,7 @@ function SwimLaneInner(props) {
     setColorMap(m => ({ ...m, [pickerFor]: e.target.value }));
   }
 
-  function exportHTML() {
+  function exportHTML(includeCsv = true) {
     const isDev = !!document.querySelector('script[src*="@vite/client"]');
     if (isDev) {
       alert("Please run 'npm run build' and open dist/index.html to export an interactive HTML with your data.");
@@ -470,7 +522,7 @@ function SwimLaneInner(props) {
     }
 
     const stateToExport = {
-      csvText,
+      csvText: includeCsv ? csvText : "",
       csvSeparator,
       colorMap,
       hiddenValues,
@@ -478,7 +530,11 @@ function SwimLaneInner(props) {
       groupModes,
       sortMode,
       customGroupOrder,
-      starred
+      starred,
+      isDarkTheme,
+      panelWidth,
+      exportedRows: includeCsv ? null : rows,
+      csvIncluded: includeCsv
     };
 
     // Collect only <script> and <style> tags from <head> — NOT the live rendered DOM.
@@ -487,7 +543,11 @@ function SwimLaneInner(props) {
       .map(el => el.outerHTML)
       .join("\n");
 
-    const stateScript = `<script id="injected-state">window.INITIAL_SWIMLANE_STATE = ${JSON.stringify(stateToExport)};</script>`;
+    const serializedState = JSON.stringify(stateToExport)
+      .replace(/</g, "\\u003c")
+      .replace(/\u2028/g, "\\u2028")
+      .replace(/\u2029/g, "\\u2029");
+    const stateScript = `<script id="injected-state">window.INITIAL_SWIMLANE_STATE = ${serializedState};</script>`;
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -606,14 +666,7 @@ ${headScripts}
     );
   }, [activeRows, rowDetails, starred, showStarredOnly, tableFilterId, tableFilterTs, tableFilterGroup, tableFilterValue, tableFilterDur, tableFilterDurBefore]);
 
-  const Btn = ({ children, onClick, accent }) => (
-    <button onClick={onClick} style={{
-      fontFamily: "monospace", fontSize: ".67rem", padding: "4px 11px", borderRadius: 3,
-      border: `1px solid ${accent ? s.accent : s.border}`,
-      background: s.surface, color: accent ? s.accent : s.text,
-      cursor: "pointer", letterSpacing: ".05em"
-    }}>{children}</button>
-  );
+
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: s.bg, color: s.text, fontFamily: "monospace", fontSize: 13, overflow: "hidden" }}>
@@ -630,6 +683,20 @@ ${headScripts}
         .highlight-pulse {
           animation: blink-highlight 0.8s ease-out 3;
         }
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+          background: ${s.bg};
+        }
+        ::-webkit-scrollbar-thumb {
+          background: ${s.surface2};
+          border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: ${s.muted};
+        }
       `}</style>
       {/* Header */}
       <div style={{ padding: "11px 20px", background: s.surface, borderBottom: `1px solid ${s.border}`, display: "flex", alignItems: "baseline", gap: 12, flexShrink: 0 }}>
@@ -639,14 +706,16 @@ ${headScripts}
 
       {/* Toolbar */}
       <div style={{ display: "flex", gap: 7, alignItems: "center", padding: "7px 18px", background: s.surface2, borderBottom: `1px solid ${s.border}`, flexWrap: "wrap", flexShrink: 0 }}>
-        <Btn onClick={() => setPanelOpen(p => !p)} accent>◀ DATA</Btn>
+        <ToolbarButton s={s} onClick={() => setPanelOpen(p => !p)} accent>{panelOpen ? "◀" : "▶"} DATA</ToolbarButton>
         <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
-        <Btn onClick={() => handleButtonZoom(1 / 1.6)}>＋</Btn>
-        <Btn onClick={() => handleButtonZoom(1.6)}>－</Btn>
-        <Btn onClick={() => setTimeRange(null)}>FIT</Btn>
+        <ToolbarButton s={s} onClick={() => setIsDarkTheme(d => !d)}>{isDarkTheme ? "☀ LIGHT" : "🌙 DARK"}</ToolbarButton>
         <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
-        <Btn onClick={() => setDragMode("zoom")} accent={dragMode === "zoom"}>🔍 ZOOM</Btn>
-        <Btn onClick={() => setDragMode("pan")} accent={dragMode === "pan"}>✋ PAN</Btn>
+        <ToolbarButton s={s} onClick={() => handleButtonZoom(1 / 1.6)}>＋</ToolbarButton>
+        <ToolbarButton s={s} onClick={() => handleButtonZoom(1.6)}>－</ToolbarButton>
+        <ToolbarButton s={s} onClick={() => setTimeRange(null)}>FIT</ToolbarButton>
+        <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
+        <ToolbarButton s={s} onClick={() => setDragMode("zoom")} accent={dragMode === "zoom"}>🔍 ZOOM</ToolbarButton>
+        <ToolbarButton s={s} onClick={() => setDragMode("pan")} accent={dragMode === "pan"}>✋ PAN</ToolbarButton>
         <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
         <span style={{ fontSize: ".6rem", color: s.muted }}>SORT:</span>
         <select value={sortMode} onChange={e => setSortMode(e.target.value)}
@@ -660,7 +729,8 @@ ${headScripts}
         {!window.INITIAL_SWIMLANE_STATE && (
           <>
             <div style={{ width: 1, height: 20, background: s.border, margin: "0 2px" }} />
-            <Btn onClick={exportHTML}>⤓ EXPORT</Btn>
+            <ToolbarButton s={s} onClick={() => exportHTML(true)}>⤓ EXPORT</ToolbarButton>
+            <ToolbarButton s={s} onClick={() => exportHTML(false)}>⤓ EXPORT (NO CSV)</ToolbarButton>
           </>
         )}
       </div>
@@ -670,7 +740,8 @@ ${headScripts}
 
         {/* Side Panel */}
         {panelOpen && (
-          <div style={{ width: 300, flexShrink: 0, background: s.surface, borderRight: `1px solid ${s.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <>
+          <div style={{ width: panelWidth, flexShrink: 0, background: s.surface, borderRight: `1px solid ${s.border}`, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             {/* Tabs */}
             <div style={{ display: "flex", borderBottom: `1px solid ${s.border}`, flexShrink: 0 }}>
               {["csv", "manual", "groups", "table"].map(tab => (
@@ -684,7 +755,7 @@ ${headScripts}
             {activeTab === "csv" && (
               <div style={{ padding: 12, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <div style={{ fontSize: ".6rem", color: s.muted, background: "rgba(42,48,69,.35)", borderLeft: `2px solid ${s.accent}`, padding: "6px 9px", lineHeight: 1.6, flex: 1 }}>
+                  <div style={{ fontSize: ".6rem", color: s.muted, background: s.noticeBg, borderLeft: `2px solid ${s.accent}`, padding: "6px 9px", lineHeight: 1.6, flex: 1 }}>
                     Header: <strong>timestamp, group, value</strong>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 10 }}>
@@ -759,7 +830,7 @@ ${headScripts}
             {/* Groups Tab — view toggles */}
             {activeTab === "groups" && (
               <div style={{ padding: 12, overflowY: "auto", flex: 1 }}>
-                <div style={{ fontSize: ".6rem", color: s.muted, background: "rgba(42,48,69,.35)", borderLeft: `2px solid ${s.accent}`, padding: "6px 9px", marginBottom: 12, lineHeight: 1.6 }}>
+                <div style={{ fontSize: ".6rem", color: s.muted, background: s.noticeBg, borderLeft: `2px solid ${s.accent}`, padding: "6px 9px", marginBottom: 12, lineHeight: 1.6 }}>
                   Click group name to <strong>SHOW/HIDE</strong>.<br />Click right side to cycle <strong>SPAN / DIAMOND / LINE</strong> mode.<br />Diamond = instant event, Line = vertical marker.
                 </div>
                 {groups.length === 0 && <div style={{ fontSize: ".62rem", color: s.muted }}>No groups loaded yet.</div>}
@@ -828,8 +899,8 @@ ${headScripts}
                 <div style={{ display: "flex", gap: 5, padding: 8, background: s.surface2, borderBottom: `1px solid ${s.border}` }}>
                   <input type="text" placeholder="ID" value={tableFilterId} onChange={e => setTableFilterId(e.target.value)} style={{ flex: "0.5", background: s.bg, border: `1px solid ${s.border}`, color: s.text, fontFamily: "monospace", fontSize: ".6rem", padding: "4px 2px", borderRadius: 2, outline: "none", minWidth: 0 }} />
                   <input type="text" placeholder="TIME" value={tableFilterTs} onChange={e => setTableFilterTs(e.target.value)} style={{ flex: 1, background: s.bg, border: `1px solid ${s.border}`, color: s.text, fontFamily: "monospace", fontSize: ".6rem", padding: "4px 2px", borderRadius: 2, outline: "none", minWidth: 0 }} />
-                  <MultiSelect options={allGroups} selected={tableFilterGroup} onChange={setTableFilterGroup} placeholder="GRP" />
-                  <MultiSelect options={allValues} selected={tableFilterValue} onChange={setTableFilterValue} placeholder="VAL" />
+                  <MultiSelect options={allGroups} selected={tableFilterGroup} onChange={setTableFilterGroup} placeholder="GRP" s={s} />
+                  <MultiSelect options={allValues} selected={tableFilterValue} onChange={setTableFilterValue} placeholder="VAL" s={s} />
                   <input type="text" placeholder="DUR" title={"Filter by duration.\nExamples:\n• >5 (greater than 5s)\n• <1h (less than 1 hour)\n• >=1.5d (greater or equal 1.5 days)\n• 10-20m (between 10 and 20 mins)\n• 30s (exactly 30s)"} value={tableFilterDur} onChange={e => setTableFilterDur(e.target.value)} style={{ flex: 1, background: s.bg, border: `1px solid ${s.border}`, color: s.text, fontFamily: "monospace", fontSize: ".6rem", padding: "4px 2px", borderRadius: 2, outline: "none", minWidth: 0 }} />
                   <input type="text" placeholder="DUR_BEF" title={"Filter by duration before.\nExamples:\n• >5\n• <1h\n• 10-20m\n• 30s"} value={tableFilterDurBefore} onChange={e => setTableFilterDurBefore(e.target.value)} style={{ flex: 1, background: s.bg, border: `1px solid ${s.border}`, color: s.text, fontFamily: "monospace", fontSize: ".6rem", padding: "4px 2px", borderRadius: 2, outline: "none", minWidth: 0 }} />
                 </div>
@@ -885,6 +956,23 @@ ${headScripts}
               </div>
             )}
           </div>
+          <div
+            onMouseDown={(e) => {
+              e.preventDefault();
+              resizeStartRef.current = { startX: e.clientX, startWidth: panelWidth };
+              setIsResizingPanel(true);
+              document.body.style.cursor = "col-resize";
+            }}
+            style={{
+              width: 6,
+              cursor: "col-resize",
+              background: s.bg,
+              borderRight: `1px solid ${s.border}`,
+              flexShrink: 0,
+              zIndex: 10,
+            }}
+          />
+          </>
         )}
 
         {/* Chart area */}
@@ -952,7 +1040,7 @@ ${headScripts}
                 {/* lane backgrounds (full width) */}
                 {laneItems.map(({ group, gi, y }) => (
                   <g key={"bg-" + group}>
-                    <rect x={0} y={y} width={W} height={LANE_H} fill={gi % 2 === 0 ? "#161a24" : "#12151e"} />
+                    <rect x={0} y={y} width={W} height={LANE_H} fill={gi % 2 === 0 ? s.laneBg1 : s.laneBg2} />
                     <line x1={0} y1={y + LANE_H} x2={W} y2={y + LANE_H} stroke={s.surface2} strokeWidth={0.5} />
                   </g>
                 ))}
@@ -985,7 +1073,7 @@ ${headScripts}
                         return (
                           <g key={i}>
                             <DiamondMarker
-                              cx={x1} cy={cy} size={DIAMOND_SIZE} col={col}
+                              cx={x1} cy={cy} size={DIAMOND_SIZE} col={col} s={s}
                               onMouseMove={e => { setTooltip({ ...tooltipData, isDiamond: true }); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
                               onMouseLeave={() => setTooltip(null)}
                             />
@@ -1080,7 +1168,7 @@ ${headScripts}
                 {/* labels container (drawn over data to mask overflow, outside clip path) */}
                 {laneItems.map(({ group, gi, y, mode }) => (
                   <g key={"label-" + group}>
-                    <rect x={0} y={y} width={LABEL_W} height={LANE_H} fill={gi % 2 === 0 ? "#1a1e2a" : "#151820"} />
+                    <rect x={0} y={y} width={LABEL_W} height={LANE_H} fill={gi % 2 === 0 ? s.labelBg1 : s.labelBg2} />
                     {mode === "diamond" && (
                       <polygon
                         points={`${LABEL_W - 14},${y + LANE_H / 2} ${LABEL_W - 10},${y + LANE_H / 2 - 4} ${LABEL_W - 6},${y + LANE_H / 2} ${LABEL_W - 10},${y + LANE_H / 2 + 4}`}
