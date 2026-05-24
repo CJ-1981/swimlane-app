@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, Component } from "react";
 
 const PALETTE = [
   "#4fc3f7", "#f06292", "#a5d6a7", "#ffb74d", "#ce93d8",
@@ -200,8 +200,54 @@ function MultiSelect({ options, selected, onChange, placeholder }) {
   );
 }
 
-const defaultState = window.INITIAL_SWIMLANE_STATE || {};
-export default function SwimLane() {
+// ── localStorage persistence ─────────────────────────────────────────────────
+const LS_KEY = "swimlane_state_v1";
+function loadPersistedState() {
+  if (window.INITIAL_SWIMLANE_STATE) return window.INITIAL_SWIMLANE_STATE;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+function persistState(state) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch {}
+}
+
+// ── Unique ID generator (collision-safe) ─────────────────────────────────────
+const generateId = () =>
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `row-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+const defaultState = loadPersistedState();
+
+// ── #3 Error Boundary ────────────────────────────────────────────────────────
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 40, background: '#0d0f14', color: '#f06292', fontFamily: 'monospace', fontSize: '.8rem', lineHeight: 2 }}>
+          <div style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 12 }}>⚠ Unexpected Error</div>
+          <pre style={{ whiteSpace: 'pre-wrap', color: '#cdd6f4', fontSize: '.7rem', background: '#161a24', padding: 16, borderRadius: 4, border: '1px solid #2a3045' }}>{String(this.state.error)}</pre>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: 16, padding: '6px 18px', background: 'transparent', color: '#4fc3f7', border: '1px solid #4fc3f7', fontFamily: 'monospace', fontSize: '.7rem', cursor: 'pointer', borderRadius: 3 }}>↺ Try Again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function SwimLane(props) {
+  return (
+    <ErrorBoundary>
+      <SwimLaneInner {...props} />
+    </ErrorBoundary>
+  );
+}
+
+function SwimLaneInner(props) {
   const [csvText, setCsvText] = useState(defaultState.csvText || SAMPLE_CSV);
   const [csvSeparator, setCsvSeparator] = useState(defaultState.csvSeparator || ",");
   const [rows, setRows] = useState([]);
@@ -228,6 +274,7 @@ export default function SwimLane() {
   const activeRows = useMemo(() => rows.filter(r => !hiddenGroups[r.group]), [rows, hiddenGroups]);
   const [panelOpen, setPanelOpen] = useState(true);
   const [error, setError] = useState("");
+  const manualTsRef = useRef(null); // focus-return ref for Add Row form
   const [manualTs, setManualTs] = useState("");
   const [manualGroup, setManualGroup] = useState("");
   const [manualValue, setManualValue] = useState("");
@@ -245,6 +292,10 @@ export default function SwimLane() {
   const chartSvgRef = useRef(null);
   const wheelData = useRef({});
   const fileInputRef = useRef(null);
+  const zoomDebounceRef = useRef(null); // #7 debounce ref for button zoom
+  useEffect(() => {
+    return () => { if (zoomDebounceRef.current) clearTimeout(zoomDebounceRef.current); };
+  }, []);
 
   function handleFileUpload(e) {
     const file = e.target.files[0];
@@ -265,12 +316,21 @@ export default function SwimLane() {
     return m;
   }
 
+  // #7 — Debounced button zoom: accumulates compound factor over 150 ms,
+  // then applies a single setTimeRange. Prevents rapid clicks from queuing
+  // multiple sequential state updates and thrashing the SVG layout.
+  const pendingZoomRef = useRef(1);
   function handleButtonZoom(factor) {
     if (!rows.length) return;
-    const { tDomMin, span } = wheelData.current;
-    const center = tDomMin + span / 2;
-    const newSpan = span * factor;
-    setTimeRange({ min: center - newSpan / 2, max: center + newSpan / 2 });
+    pendingZoomRef.current *= factor;
+    if (zoomDebounceRef.current) clearTimeout(zoomDebounceRef.current);
+    zoomDebounceRef.current = setTimeout(() => {
+      const { tDomMin, span } = wheelData.current;
+      const center = tDomMin + span / 2;
+      const newSpan = span * pendingZoomRef.current;
+      pendingZoomRef.current = 1;
+      setTimeRange({ min: center - newSpan / 2, max: center + newSpan / 2 });
+    }, 150);
   }
 
   function handleRender(isInitial = false) {
@@ -289,6 +349,15 @@ export default function SwimLane() {
       setLoading(false);
     }, 10);
   }
+
+  // ── Persist state to localStorage whenever relevant state changes (debounced) ─
+  useEffect(() => {
+    if (window.INITIAL_SWIMLANE_STATE) return; // don't overwrite exported state
+    const timer = setTimeout(() => {
+      persistState({ csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred]);
 
   useEffect(() => {
     handleRender(!!window.INITIAL_SWIMLANE_STATE);
@@ -324,7 +393,7 @@ export default function SwimLane() {
     return () => el.removeEventListener("wheel", handleNativeWheel);
   }, [rows.length]);
 
-  function getGroups() {
+  const groups = useMemo(() => {
     const g = [...new Set(rows.map(r => r.group))];
     if (sortMode === "custom") {
       const ordered = customGroupOrder.filter(grp => g.includes(grp));
@@ -336,18 +405,25 @@ export default function SwimLane() {
     if (sortMode === "events") return g.sort((a, b) =>
       rows.filter(r => r.group === b).length - rows.filter(r => r.group === a).length);
     return g;
-  }
+  }, [rows, sortMode, customGroupOrder]);
+
+  const activeGroups = useMemo(() => groups.filter(g => !hiddenGroups[g]), [groups, hiddenGroups]);
   function getValues() { return [...new Set(activeRows.map(r => r.value))]; }
 
   function addRow() {
-    if (!manualTs || !manualGroup || !manualValue) { setError("Fill all fields"); return; }
+    if (!manualTs || !manualGroup || !manualValue) { setError("Fill all fields — timestamp, group, and value are required."); return; }
     const ts = new Date(manualTs);
-    if (isNaN(ts.getTime())) { setError("Invalid timestamp"); return; }
-    const newId = rows.length ? Math.max(...rows.map(r => r._id || 0)) + 1 : 1;
+    if (isNaN(ts.getTime())) { setError("Invalid timestamp — use ISO format, e.g. 2024-01-15 08:00"); return; }
+    const newId = generateId();
     const newRows = [...rows, { _id: newId, ts, group: manualGroup, value: manualValue }].sort((a, b) => a.ts - b.ts);
     setColorMap(buildColorMap(newRows, colorMap));
     setRows(newRows);
     setError("");
+    setManualTs("");
+    setManualGroup("");
+    setManualValue("");
+    // Return focus to timestamp field for quick sequential entry
+    setTimeout(() => manualTsRef.current && manualTsRef.current.focus(), 50);
   }
   function deleteRow(id) { setRows(rows.filter(r => r._id !== id)); }
   function toggleValue(val) { setHiddenValues(h => ({ ...h, [val]: !h[val] })); }
@@ -437,8 +513,6 @@ ${headScripts}
   }
 
   // ── Layout math
-  const groups = getGroups();
-  const activeGroups = groups.filter(g => !hiddenGroups[g]);
   const values = getValues();
   const containerW = scrollRef.current?.clientWidth || 700;
   const W = Math.max(containerW, 400);
@@ -458,24 +532,42 @@ ${headScripts}
   const ticks = activeRows.length ? timeTicks(tDomMin, tDomMax, Math.max(4, Math.floor((W - LABEL_W) / 100))) : [];
   const gridBottom = PAD_TOP + AXIS_H + activeGroups.length * (LANE_H + LANE_GAP);
 
-  // ── Build render items per lane
-  const laneItems = activeGroups.map((group, gi) => {
+  // ── #2 Memoized stable lane data (group/sort/dur — does NOT depend on zoom)
+  // Pixel positions (x1, x2, segW) are computed at render time below so that
+  // zoom/pan only recomputes coordinates, not the expensive grouping work.
+  const laneEventData = useMemo(() => {
+    const grouped = new Map();
+    activeRows.forEach(r => {
+      if (!grouped.has(r.group)) grouped.set(r.group, []);
+      grouped.get(r.group).push(r);
+    });
+
+    return activeGroups.map((group) => {
+      const mode = groupModes[group] || "span";
+      const laneData = grouped.get(group) || [];
+      const items = laneData.map((ev, i) => {
+        const next = laneData[i + 1] || null;
+        const col = colorMap[ev.value] || "#888";
+        const dur = next ? next.ts.getTime() - ev.ts.getTime() : null;
+        const durBefore = i > 0 ? ev.ts.getTime() - laneData[i - 1].ts.getTime() : null;
+        const durLabel = fmtDur(dur);
+        return { ev, next, col, dur, durBefore, durLabel, mode };
+      });
+      return { group, mode, items };
+    });
+  }, [activeRows, colorMap, groupModes, activeGroups]);
+
+  // ── Pixel positions injected at render time (zoom/pan-dependent)
+  const laneItems = laneEventData.map(({ group, mode, items }, gi) => {
     const y = PAD_TOP + AXIS_H + gi * (LANE_H + LANE_GAP);
     const cy = y + LANE_H / 2;
-    const mode = groupModes[group] || "span";
-    const laneData = activeRows.filter(r => r.group === group).sort((a, b) => a.ts - b.ts);
-    const items = laneData.map((ev, i) => {
-      const next = laneData[i + 1] || null;
-      const col = colorMap[ev.value] || "#888";
-      const dur = next ? next.ts.getTime() - ev.ts.getTime() : null;
-      const durBefore = (i > 0) ? ev.ts.getTime() - laneData[i - 1].ts.getTime() : null;
-      const durLabel = fmtDur(dur);
-      const x1 = xMap(ev.ts.getTime());
-      const x2 = next ? xMap(next.ts.getTime()) : xMap(tDomMax);
+    const pixelItems = items.map(item => {
+      const x1 = xMap(item.ev.ts.getTime());
+      const x2 = item.next ? xMap(item.next.ts.getTime()) : xMap(tDomMax);
       const segW = Math.max(x2 - x1, 3);
-      return { ev, next, col, dur, durBefore, durLabel, x1, x2, segW, mode };
+      return { ...item, x1, x2, segW };
     });
-    return { group, gi, y, cy, mode, items };
+    return { group, gi, y, cy, mode, items: pixelItems };
   });
 
   const rowDetails = useMemo(() => {
@@ -619,20 +711,48 @@ ${headScripts}
             {/* Manual Add Tab */}
             {activeTab === "manual" && (
               <div style={{ padding: 12, overflowY: "auto", flex: 1 }}>
-                {[["Timestamp", "text", manualTs, setManualTs, "e.g. yyyy/mm/dd"],
-                ["Group", "text", manualGroup, setManualGroup, "e.g. Server A"],
-                ["Value", "text", manualValue, setManualValue, "e.g. healthy"]
-                ].map(([label, type, val, setter, ph]) => (
-                  <div key={label}>
-                    <div style={{ fontSize: ".57rem", letterSpacing: ".1em", color: s.muted, textTransform: "uppercase", margin: "8px 0 4px" }}>{label}</div>
-                    <input type={type} value={val} onChange={e => setter(e.target.value)} placeholder={ph}
-                      style={{ width: "100%", background: s.bg, border: `1px solid ${s.border}`, color: s.text, fontFamily: "monospace", fontSize: ".67rem", padding: "5px 8px", borderRadius: 3, outline: "none" }} />
-                  </div>
-                ))}
-                {error && <div style={{ fontSize: ".62rem", color: s.accent2, marginTop: 6 }}>⚠ {error}</div>}
-                <button onClick={addRow} style={{ width: "100%", marginTop: 10, padding: 7, background: "transparent", color: s.accent2, border: `1px solid ${s.accent2}`, fontFamily: "monospace", fontSize: ".67rem", cursor: "pointer", borderRadius: 3 }}>
-                  + ADD POINT
-                </button>
+                <form
+                  onSubmit={e => { e.preventDefault(); addRow(); }}
+                  aria-label="Add data point"
+                  noValidate
+                >
+                  {[
+                    ["Timestamp", "text", manualTs, setManualTs, "e.g. 2024-01-15 08:00", "timestamp-input", manualTsRef],
+                    ["Group", "text", manualGroup, setManualGroup, "e.g. Server A", "group-input", null],
+                    ["Value", "text", manualValue, setManualValue, "e.g. healthy", "value-input", null],
+                  ].map(([label, type, val, setter, ph, id, ref]) => (
+                    <div key={label}>
+                      <label
+                        htmlFor={id}
+                        style={{ display: "block", fontSize: ".57rem", letterSpacing: ".1em", color: s.muted, textTransform: "uppercase", margin: "8px 0 4px" }}
+                      >
+                        {label}
+                      </label>
+                      <input
+                        id={id}
+                        ref={ref}
+                        type={type}
+                        value={val}
+                        onChange={e => setter(e.target.value)}
+                        placeholder={ph}
+                        aria-label={label}
+                        aria-required="true"
+                        style={{ width: "100%", background: s.bg, border: `1px solid ${s.border}`, color: s.text, fontFamily: "monospace", fontSize: ".67rem", padding: "5px 8px", borderRadius: 3, outline: "none", boxSizing: "border-box" }}
+                      />
+                    </div>
+                  ))}
+                  {error && (
+                    <div role="alert" style={{ fontSize: ".62rem", color: s.accent2, marginTop: 8, padding: "5px 8px", background: "rgba(240,98,146,0.08)", border: `1px solid ${s.accent2}`, borderRadius: 3 }}>
+                      ⚠ {error}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    style={{ width: "100%", marginTop: 10, padding: 7, background: "transparent", color: s.accent2, border: `1px solid ${s.accent2}`, fontFamily: "monospace", fontSize: ".67rem", cursor: "pointer", borderRadius: 3 }}
+                  >
+                    + ADD POINT
+                  </button>
+                </form>
               </div>
             )}
 
@@ -664,7 +784,7 @@ ${headScripts}
                       onDrop={(e) => {
                         e.preventDefault();
                         if (draggedGroup && draggedGroup !== group) {
-                          let currentGroups = getGroups();
+                          let currentGroups = [...groups];
                           const draggedIdx = currentGroups.indexOf(draggedGroup);
                           const targetIdx = currentGroups.indexOf(group);
                           if (draggedIdx !== -1 && targetIdx !== -1) {
@@ -1041,18 +1161,33 @@ ${headScripts}
         </div>
       </div>
 
-      {/* Tooltip */}
-      {tooltip && (
-        <div style={{ position: "fixed", left: tooltipPos.x + 14, top: tooltipPos.y - 10, background: s.surface2, border: `1px solid ${s.border}`, borderLeft: `3px solid ${tooltip.col}`, padding: "8px 12px", fontSize: ".65rem", borderRadius: 3, zIndex: 999, minWidth: 170, lineHeight: 1.8, pointerEvents: "none" }}>
-          <div style={{ fontSize: ".8rem", fontWeight: 700, letterSpacing: ".05em", marginBottom: 3, color: tooltip.col }}>{tooltip.group}</div>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>START <span style={{ color: s.text }}>{fmtTs(tooltip.ev.ts, true)}</span></div>
-          {!tooltip.isDiamond && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>END <span style={{ color: s.text }}>{tooltip.next ? fmtTs(tooltip.next.ts, true) : "(last event)"}</span></div>}
-          {!tooltip.isDiamond && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>DURATION <span style={{ color: s.text }}>{fmtDur(tooltip.dur) || "—"}</span></div>}
-          {!tooltip.isDiamond && tooltip.durBefore !== undefined && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>DUR BEFORE <span style={{ color: s.text }}>{fmtDur(tooltip.durBefore) || "—"}</span></div>}
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>ID <span style={{ color: s.text }}>{tooltip.ev._id}</span></div>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>VALUE <span style={{ color: tooltip.col, fontWeight: 700 }}>{tooltip.ev.value}</span></div>
-        </div>
-      )}
+      {/* Tooltip — positioned near cursor with vertical flip to avoid screen overflow */}
+      {tooltip && (() => {
+        // Tooltip is roughly 170px wide, 160px tall
+        const TOOLTIP_H = 170;
+        const TOOLTIP_W = 200;
+        const vpH = window.innerHeight;
+        const vpW = window.innerWidth;
+        // Flip above cursor if too close to bottom; shift left if too close to right edge
+        const top = tooltipPos.y + TOOLTIP_H + 10 > vpH
+          ? tooltipPos.y - TOOLTIP_H - 6
+          : tooltipPos.y - 10;
+        const left = tooltipPos.x + TOOLTIP_W + 14 > vpW
+          ? tooltipPos.x - TOOLTIP_W - 14
+          : tooltipPos.x + 14;
+        return (
+          <div role="tooltip" style={{ position: "fixed", left, top, background: s.surface2, border: `1px solid ${s.border}`, borderLeft: `3px solid ${tooltip.col}`, padding: "8px 12px", fontSize: ".65rem", borderRadius: 3, zIndex: 999, minWidth: 170, lineHeight: 1.8, pointerEvents: "none" }}>
+            <div style={{ fontSize: ".8rem", fontWeight: 700, letterSpacing: ".05em", marginBottom: 3, color: tooltip.col }}>{tooltip.group}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>START <span style={{ color: s.text }}>{fmtTs(tooltip.ev.ts, true)}</span></div>
+            {!tooltip.isDiamond && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>END <span style={{ color: s.text }}>{tooltip.next ? fmtTs(tooltip.next.ts, true) : "(last event)"}</span></div>}
+            {!tooltip.isDiamond && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>DURATION <span style={{ color: s.text }}>{fmtDur(tooltip.dur) || "—"}</span></div>}
+            {!tooltip.isDiamond && tooltip.durBefore !== undefined && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>DUR BEFORE <span style={{ color: s.text }}>{fmtDur(tooltip.durBefore) || "—"}</span></div>}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>ID <span style={{ color: s.text }}>{String(tooltip.ev._id).slice(0, 8)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: s.muted }}>VALUE <span style={{ color: tooltip.col, fontWeight: 700 }}>{tooltip.ev.value}</span></div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
+
