@@ -1,7 +1,7 @@
 # Swimlane App
-
 An interactive web application for visualizing event data on a swimlane timeline, built with React and Vite.
 
+![Swimlane App Screenshot](./screenshot.png)
 ## Features
 
 - **CSV Data Import**: Upload or paste CSV data containing `timestamp`, `group`, and `value` columns.
