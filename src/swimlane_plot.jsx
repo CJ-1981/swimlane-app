@@ -273,6 +273,8 @@ function ToolbarButton({ children, onClick, accent, s }) {
 function SwimLaneInner(props) {
   const [isDarkTheme, setIsDarkTheme] = useState(defaultState.isDarkTheme ?? true);
   const [panelWidth, setPanelWidth] = useState(defaultState.panelWidth || 300);
+  const [isResizingPanel, setIsResizingPanel] = useState(false);
+  const resizeStartRef = useRef(null);
   const s = isDarkTheme ? darkTheme : lightTheme;
   const [csvText, setCsvText] = useState(defaultState.csvIncluded === false ? "" : (defaultState.csvText || SAMPLE_CSV));
   const [csvSeparator, setCsvSeparator] = useState(defaultState.csvSeparator || ",");
@@ -388,6 +390,26 @@ function SwimLaneInner(props) {
     }, 500);
     return () => clearTimeout(timer);
   }, [csvText, csvSeparator, colorMap, hiddenValues, hiddenGroups, groupModes, sortMode, customGroupOrder, starred, isDarkTheme, panelWidth]);
+
+  useEffect(() => {
+    if (!isResizingPanel) return;
+    const handleMouseMove = (moveEvent) => {
+      const { startX, startWidth } = resizeStartRef.current;
+      const newWidth = Math.max(200, Math.min(startWidth + moveEvent.clientX - startX, 800));
+      setPanelWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      document.body.style.cursor = "default";
+      setIsResizingPanel(false);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.body.style.cursor = "default";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizingPanel]);
 
   useEffect(() => {
     handleRender(!!window.INITIAL_SWIMLANE_STATE);
@@ -937,20 +959,9 @@ ${headScripts}
           <div
             onMouseDown={(e) => {
               e.preventDefault();
-              const startX = e.clientX;
-              const startWidth = panelWidth;
+              resizeStartRef.current = { startX: e.clientX, startWidth: panelWidth };
+              setIsResizingPanel(true);
               document.body.style.cursor = "col-resize";
-              const handleMouseMove = (moveEvent) => {
-                const newWidth = Math.max(200, Math.min(startWidth + moveEvent.clientX - startX, 800));
-                setPanelWidth(newWidth);
-              };
-              const handleMouseUp = () => {
-                document.body.style.cursor = "default";
-                document.removeEventListener("mousemove", handleMouseMove);
-                document.removeEventListener("mouseup", handleMouseUp);
-              };
-              document.addEventListener("mousemove", handleMouseMove);
-              document.addEventListener("mouseup", handleMouseUp);
             }}
             style={{
               width: 6,
