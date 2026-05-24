@@ -278,7 +278,7 @@ function SwimLaneInner(props) {
   const s = isDarkTheme ? darkTheme : lightTheme;
   const [csvText, setCsvText] = useState(defaultState.csvIncluded === false ? "" : (defaultState.csvText || SAMPLE_CSV));
   const [csvSeparator, setCsvSeparator] = useState(defaultState.csvSeparator || ",");
-  const [rows, setRows] = useState(defaultState.exportedRows || []);
+  const [rows, setRows] = useState(() => (defaultState.exportedRows || []).map(r => ({ ...r, ts: new Date(r.ts) })));
   const [colorMap, setColorMap] = useState(defaultState.colorMap || {});
   const [hiddenValues, setHiddenValues] = useState(defaultState.hiddenValues || {});
   const [hiddenGroups, setHiddenGroups] = useState(defaultState.hiddenGroups || {});
