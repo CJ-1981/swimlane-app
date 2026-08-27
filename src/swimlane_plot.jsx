@@ -222,7 +222,9 @@ function loadPersistedState() {
   } catch { return {}; }
 }
 function persistState(state) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch {}
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {
+    void e;
+  }
 }
 
 // ── Unique ID generator (collision-safe) ─────────────────────────────────────
@@ -270,7 +272,7 @@ function ToolbarButton({ children, onClick, accent, s }) {
   );
 }
 
-function SwimLaneInner(props) {
+function SwimLaneInner() {
   const [isDarkTheme, setIsDarkTheme] = useState(defaultState.isDarkTheme ?? true);
   const [panelWidth, setPanelWidth] = useState(defaultState.panelWidth || 300);
   const [isResizingPanel, setIsResizingPanel] = useState(false);
@@ -278,8 +280,32 @@ function SwimLaneInner(props) {
   const s = isDarkTheme ? darkTheme : lightTheme;
   const [csvText, setCsvText] = useState(defaultState.csvIncluded === false ? "" : (defaultState.csvText || SAMPLE_CSV));
   const [csvSeparator, setCsvSeparator] = useState(defaultState.csvSeparator || ",");
-  const [rows, setRows] = useState(() => (defaultState.exportedRows || []).map(r => ({ ...r, ts: new Date(r.ts) })));
-  const [colorMap, setColorMap] = useState(defaultState.colorMap || {});
+  const [rows, setRows] = useState(() => {
+    if (defaultState.exportedRows) {
+      return defaultState.exportedRows.map(r => ({ ...r, ts: new Date(r.ts) }));
+    }
+    try {
+      const text = defaultState.csvIncluded === false ? "" : (defaultState.csvText || SAMPLE_CSV);
+      const sep = defaultState.csvSeparator || ",";
+      const parsed = parseCSV(text, sep);
+      parsed.forEach((r, i) => r._id = i + 1);
+      return parsed;
+    } catch {
+      return [];
+    }
+  });
+  const [colorMap, setColorMap] = useState(() => {
+    if (defaultState.colorMap) return defaultState.colorMap;
+    if (defaultState.exportedRows) return {};
+    try {
+      const text = defaultState.csvIncluded === false ? "" : (defaultState.csvText || SAMPLE_CSV);
+      const sep = defaultState.csvSeparator || ",";
+      const parsed = parseCSV(text, sep);
+      return buildColorMap(parsed, {});
+    } catch {
+      return {};
+    }
+  });
   const [hiddenValues, setHiddenValues] = useState(defaultState.hiddenValues || {});
   const [hiddenGroups, setHiddenGroups] = useState(defaultState.hiddenGroups || {});
   const [groupModes, setGroupModes] = useState(defaultState.groupModes || {});
@@ -412,9 +438,21 @@ function SwimLaneInner(props) {
   }, [isResizingPanel]);
 
   useEffect(() => {
-    handleRender(!!window.INITIAL_SWIMLANE_STATE);
     document.body.style.margin = "0";
     document.body.style.overflow = "hidden";
+  }, []);
+
+  const [containerWidth, setContainerWidth] = useState(700);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -488,7 +526,7 @@ function SwimLaneInner(props) {
     });
   }
 
-  function jumpToRow(r) {
+  const jumpToRow = useCallback((r) => {
     if (!rows.length) return;
     if (hiddenGroups[r.group]) {
       setHiddenGroups(h => ({ ...h, [r.group]: false }));
@@ -502,7 +540,7 @@ function SwimLaneInner(props) {
     
     setTimeRange({ min: centerTs - targetSpan / 2, max: centerTs + targetSpan / 2 });
     setHighlight({ r, time: Date.now() });
-  }
+  }, [rows.length, hiddenGroups]);
 
   // ── color picker: click swatch → open native color input
   function openPicker(val) {
@@ -574,8 +612,7 @@ ${headScripts}
 
   // ── Layout math
   const values = getValues();
-  const containerW = scrollRef.current?.clientWidth || 700;
-  const W = Math.max(containerW, 400);
+  const W = Math.max(containerWidth, 400);
   const H = PAD_TOP + AXIS_H + activeGroups.length * (LANE_H + LANE_GAP) + 20;
 
   let tMin = Infinity, tMax = -Infinity;
@@ -586,8 +623,11 @@ ${headScripts}
   const span = tDomMax - tDomMin || 1;
   const fullSpan = (tMax + tPad) - (tMin - tPad) || 1;
   const zoomLevel = fullSpan / span;
-  const xMap = ts => LABEL_W + (ts - tDomMin) / span * (W - LABEL_W - PAD_R);
-  wheelData.current = { tDomMin, tDomMax, span, W };
+  const xMap = useCallback(ts => LABEL_W + (ts - tDomMin) / span * (W - LABEL_W - PAD_R), [tDomMin, span, W]);
+
+  useEffect(() => {
+    wheelData.current = { tDomMin, tDomMax, span, W };
+  }, [tDomMin, tDomMax, span, W]);
 
   const ticks = activeRows.length ? timeTicks(tDomMin, tDomMax, Math.max(4, Math.floor((W - LABEL_W) / 100))) : [];
   const gridBottom = PAD_TOP + AXIS_H + activeGroups.length * (LANE_H + LANE_GAP);
@@ -1009,7 +1049,7 @@ ${headScripts}
                     setDragCurrent(x);
                   }
                 }}
-                onMouseUp={e => {
+                onMouseUp={() => {
                   if (dragMode === "pan") {
                     setPanStart(null);
                   } else if (dragStart !== null && dragCurrent !== null) {
@@ -1024,7 +1064,7 @@ ${headScripts}
                   setDragStart(null);
                   setDragCurrent(null);
                 }}
-                onMouseLeave={e => {
+                onMouseLeave={() => {
                   setPanStart(null);
                   setDragStart(null);
                   setDragCurrent(null);
