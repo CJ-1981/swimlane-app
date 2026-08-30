@@ -1,4 +1,7 @@
 # Swimlane App
+
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Online-brightgreen)](https://cj-1981.github.io/swimlane-app/)
+
 An interactive web application for visualizing event data on a swimlane timeline, built with React and Vite.
 
 ![Swimlane App Screenshot](./screenshot.png)
